@@ -13,8 +13,8 @@ function twitter_api_init() {
 	// require libraries
 	$base = elgg_get_plugins_path() . 'twitter_api';
         
-	elgg_register_class('TwitterOAuth', "$base/vendors/twitteroauth/tmhOAuth.php");
-        elgg_register_class('TwitterUtilities',"$base/vendors/twitteroauth/tmhUtilities.php");
+	elgg_register_library('TwitterOAuth', "$base/vendors/twitteroauth/tmhOAuth.php");
+        elgg_register_library('TwitterUtilities',"$base/vendors/twitteroauth/tmhUtilities.php");
         
 	elgg_register_library('twitter_api', "$base/lib/twitter_api.php");
 	elgg_load_library('twitter_api');
@@ -114,6 +114,9 @@ function twitter_api_pagehandler($page) {
  */
 function twitter_api_tweet($hook, $type, $returnvalue, $params) {
 
+    	elgg_load_library('TwitterOAuth');
+        elgg_load_library('TwitterUtilities');
+        
 	if (!elgg_instanceof($params['user'])) {
 		return;
 	}
@@ -158,7 +161,11 @@ function twitter_api_tweet($hook, $type, $returnvalue, $params) {
  * @param array $options
  */
 function twitter_api_fetch_tweets($hook, $type, $returnvalue, $params) {
-	// check admin settings
+
+        elgg_load_library('TwitterOAuth');
+        elgg_load_library('TwitterUtilities');
+
+        // check admin settings
 	$consumer_key = elgg_get_plugin_setting('consumer_key', 'twitter_api');
 	$consumer_secret = elgg_get_plugin_setting('consumer_secret', 'twitter_api');
 	if (!($consumer_key && $consumer_secret)) {
