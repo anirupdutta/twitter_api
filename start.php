@@ -38,10 +38,12 @@ function twitter_api_init() {
 	elgg_register_plugin_hook_handler('public_pages', 'walled_garden', 'twitter_api_public_pages');
 
 	// push status messages to twitter
-	elgg_register_plugin_hook_handler('status', 'user', 'twitter_api_tweet');
+	elgg_register_plugin_hook_handler('status', 'user', 'twitter_api_tweet');        
 
-	// fetch status messages from twitter
-	elgg_register_plugin_hook_handler('fetch_statuses', 'user', 'twitter_api_fetch_tweets');        
+	// allow plugin authors to hook into this service
+	elgg_register_plugin_hook_handler('tweet', 'twitter_service', 'twitter_api_tweet');
+	elgg_register_plugin_hook_handler('tweet_fetch', 'twitter_service', 'twitter_api_tweet_fetch');
+	elgg_register_plugin_hook_handler('photo_tweet', 'twitter_service', 'twitter_api_photo_tweet');        
         
 	$actions = dirname(__FILE__) . '/actions/twitter_api';
 	elgg_register_action('twitter_api/interstitial_settings', "$actions/interstitial_settings.php", 'logged_in');
@@ -105,7 +107,58 @@ function twitter_api_pagehandler($page) {
 }
 
 /**
- * Push a status update to twitter.
+* Get tweets for a user.
+* Backward Compability
+* @param int $user_id The Elgg user GUID
+* @param array $options
+*/
+function twitter_api_fetch_tweets($user_guid, $options = array()) {
+
+    elgg_load_library('TwitterOAuth');
+    elgg_load_library('TwitterUtilities');
+        
+    // check admin settings
+    $consumer_key = elgg_get_plugin_setting('consumer_key', 'twitter_api');
+    $consumer_secret = elgg_get_plugin_setting('consumer_secret', 'twitter_api');
+
+    if (!($consumer_key && $consumer_secret)) {
+        return FALSE;
+    }
+
+    // check user settings
+
+    $access_key = elgg_get_plugin_user_setting('access_key', $user_guid, 'twitter_api');
+    $access_secret = elgg_get_plugin_user_setting('access_secret', $user_guid, 'twitter_api');
+    
+    if (!($access_key && $access_secret)) {
+        return FALSE;
+    }
+
+    $tmhOAuth = new tmhOAuth(array(
+           'consumer_key' => $consumer_key,
+           'consumer_secret' => $consumer_secret,
+           'user_token' => $access_key,
+           'user_secret' => $access_secret,
+    ));
+        
+    // fetch tweets
+
+    $code = $tmhOAuth->request('GET', $tmhOAuth->url('1/statuses/user_timeline'),$options);
+    
+    if ($code == 200) {
+        $user_timeline = json_decode($tmhOAuth->response['response']);
+    }
+    else {
+        outputError($tmhOAuth);
+    }
+    
+    return $user_timeline;
+ 
+}
+
+
+/**
+ * Push a tweet to twitter.
  *
  * @param string $hook
  * @param string $type
@@ -155,16 +208,19 @@ function twitter_api_tweet($hook, $type, $returnvalue, $params) {
 }
 
 /**
- * Get tweets for a user.
+ * Fetch tweets from twitter
  *
- * @param int   $user_id The Elgg user GUID
- * @param array $options
+ * @param string $hook
+ * @param string $type
+ * @param array  $return_value
+ * @param array  $params
  */
-function twitter_api_fetch_tweets($hook, $type, $returnvalue, $params) {
+
+function twitter_api_tweet_fetch($hook, $entity_type, $returnvalue, $params) {
 
         elgg_load_library('TwitterOAuth');
         elgg_load_library('TwitterUtilities');
-
+    
         // check admin settings
 	$consumer_key = elgg_get_plugin_setting('consumer_key', 'twitter_api');
 	$consumer_secret = elgg_get_plugin_setting('consumer_secret', 'twitter_api');
@@ -173,25 +229,130 @@ function twitter_api_fetch_tweets($hook, $type, $returnvalue, $params) {
 	}
 
 	// check user settings
-	$user_id = $params['user']->getGUID();
-        $access_key = elgg_get_plugin_user_setting('access_key', $user_guid, 'twitter_api');
-	$access_secret = elgg_get_plugin_user_setting('access_secret', $user_guid, 'twitter_api');
+	$user_id = $params['userid'];
+	$access_key = elgg_get_plugin_user_setting('access_key', $user_id, 'twitter_api');
+	$access_secret = elgg_get_plugin_user_setting('access_secret', $user_id, 'twitter_api');
 	if (!($access_key && $access_secret)) {
 		return FALSE;
 	}
+
+	if(!$params['count'])
+	{
+		$params['count'] = 20;
+	}
+	if(!$params['page'])
+	{
+		$params['page'] = 1;	
+	}
+	if(!$params['include_rts'])
+	{
+		$params['page'] = false;	
+	}
+
+	// fetch tweets
+	$options = array(
+			'count' => $params['count'],
+			'page' => $params['page'],
+			'include_rts' => $params['include_rts'],
+	);
 
         $tmhOAuth = new tmhOAuth(array(
             'consumer_key'    => $consumer_key,
             'consumer_secret' => $consumer_secret,
             'user_token'      => $access_key,
             'user_secret'     => $access_secret,
-        ));        
+        ));          
         
-	// fetch tweets
-
-        $code = $tmhOAuth->request('GET', $tmhOAuth->url('1/statuses/user_timeline'),$params);
-        return $code;
+     	switch ($params['choice']) {
+		case "hometimeline":
+			$code = $tmhOAuth->request('GET', $tmhOAuth->url('1/statuses/home_timeline'),$options);
+		break;
+		case "mentions":
+			$code = $tmhOAuth->request('GET', $tmhOAuth->url('1/statuses/mentions'),$options);
+		break;
+		case "publictimeline":
+			$code = $tmhOAuth->request('GET', $tmhOAuth->url('1/statuses/public_timeline'),$options);
+		break;
+		case "retweetsofme":
+			$code = $tmhOAuth->request('GET', $tmhOAuth->url('1/statuses/retweets_of_me'),$options);
+		break;
+		case "usertimeline":
+			$code = $tmhOAuth->request('GET', $tmhOAuth->url('1/statuses/user_timeline'),$options);
+		break;
+		default:
+			$code = $tmhOAuth->request('GET', $tmhOAuth->url('1/statuses/user_timeline'),$options);
+		break;
+	}
+        
+        if ($code == 200) {
+            $fetch_tweets = json_decode($tmhOAuth->response['response']);
+        }
+        else {
+            outputError($tmhOAuth);
+        }
+    
+        return $fetch_tweets;
 }
+
+
+/**
+ * Tweet a photo to twitter.
+ *
+ * @param string $hook
+ * @param string $type
+ * @param null   $returnvalue
+ * @param array  $params
+ */
+function twitter_api_photo_tweet($hook, $type, $returnvalue, $params) {
+
+    	elgg_load_library('TwitterOAuth');
+        elgg_load_library('TwitterUtilities');
+        
+	if (!elgg_instanceof($params['user'])) {
+		return;
+	}
+
+	// @todo - allow admin to select origins?
+
+	// check admin settings
+	$consumer_key = elgg_get_plugin_setting('consumer_key', 'twitter_api');
+	$consumer_secret = elgg_get_plugin_setting('consumer_secret', 'twitter_api');
+	if (!($consumer_key && $consumer_secret)) {
+		return;
+	}
+
+	// check user settings
+	$user_id = $params['user']->getGUID();
+	$access_key = elgg_get_plugin_user_setting('access_key', $user_id, 'twitter_api');
+	$access_secret = elgg_get_plugin_user_setting('access_secret', $user_id, 'twitter_api');
+	if (!($access_key && $access_secret)) {
+		return;
+	}
+        
+        $tmhOAuth = new tmhOAuth(array(
+            'consumer_key'    => $consumer_key,
+            'consumer_secret' => $consumer_secret,
+            'user_token'      => $access_key,
+            'user_secret'     => $access_secret,
+        ));
+        
+	// post a photo as tweet
+        
+        $image = $params['image'];
+        $mime = $params['mime'];
+        
+        $code = $tmhOAuth->request('POST',
+            'https://upload.twitter.com/1/statuses/update_with_media.json',
+            array(
+                'media[]'  => "@{$image};type={$mime};filename={$image}",
+                'status'   => 'Picture time',
+            ),
+            true, // use auth
+            true  // multipart
+        );
+        
+}
+
 
 /**
  * Register as public pages for walled garden.
@@ -201,6 +362,7 @@ function twitter_api_fetch_tweets($hook, $type, $returnvalue, $params) {
  * @param array  $return_value
  * @param array  $params
  */
+
 function twitter_api_public_pages($hook, $type, $return_value, $params) {
 	$return_value[] = 'twitter_api/forward';
 	$return_value[] = 'twitter_api/login';
