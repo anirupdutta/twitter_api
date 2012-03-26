@@ -325,7 +325,7 @@ function twitter_api_get_authorize_url($callback = NULL, $login = true) {
 		'oauth_token_secret' => $_SESSION['oauth']['oauth_token_secret'],
             );
             
-            $authurl = $tmhOAuth->url("oauth/authorize", '') .  "?oauth_token={$_SESSION['oauth']['oauth_token']}";
+            $authurl = $tmhOAuth->url("oauth/authenticate", '') .  "?oauth_token={$_SESSION['oauth']['oauth_token']}";
             return $authurl;
          
         }
